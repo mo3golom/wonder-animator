@@ -2,11 +2,12 @@ package processorType
 
 import (
 	"errors"
+	"github.com/llgcode/draw2d/draw2dimg"
+	"github.com/mitchellh/mapstructure"
 	"github.com/mo3golom/wonder-animator/internal/dto"
 	"github.com/mo3golom/wonder-animator/internal/dto/processorOptions"
-	"github.com/mo3golom/wonder-animator/internal/transformer"
 	"github.com/mo3golom/wonder-animator/pkg/draw2dExtend"
-	"image/draw"
+	"image"
 )
 
 type TextProcessor struct {
@@ -14,39 +15,36 @@ type TextProcessor struct {
 	*ProcessorStruct
 }
 
-func (tp *TextProcessor) Processing(dest draw.Image, block *dto.Block, frameData *dto.FrameData) (err error) {
+func (tp *TextProcessor) Processing(_ *dto.Block, _ *dto.FrameData) (output *image.RGBA, err error) {
 	if nil == tp.options {
-		return errors.New("предварительно необходимо преобразовать настройки")
+		return nil, errors.New("предварительно необходимо преобразовать настройки")
 	}
 
-	if "" == tp.options.Text() {
-		return errors.New("для генерации текста нужен текст")
+	if "" == tp.options.Text {
+		return nil, errors.New("для генерации текста нужен текст")
 	}
 
-	graphicContext := draw2dExtend.NewGraphicContext(dest)
-	effectValues := tp.applyEffects(block, frameData)
+	output = image.NewRGBA(image.Rect(0, 0, tp.options.Width, tp.options.Height))
+	graphicContext := draw2dimg.NewGraphicContext(output)
 
-	backgroundOptions := draw2dExtend.NewBackgroundOptions().
-		SetFillColor(tp.options.BackgroundColor()).
-		SetPadding(tp.options.Padding()).
-		SetRadius(tp.options.Radius())
+	backgroundOptions := draw2dExtend.NewBackgroundOptions()
+	backgroundOptions.FillColor = draw2dExtend.ParseHexColor(tp.options.BackgroundColor)
+	backgroundOptions.Padding = tp.options.Padding
+	backgroundOptions.Radius = tp.options.Radius
 
-	tp.drawBuilder.
+	tp.DrawBuilder.
 		SetGraphicContext(graphicContext).
-		SetX(effectValues.X()).
-		SetY(effectValues.Y()).
-		SetRotate(effectValues.Rotate()).
-		SetOpacity(effectValues.Opacity()).
-		SetScale(effectValues.Scale()).
-		SetRotatePointType(effectValues.RotatePoint).
-		SetFillColor(tp.options.TextColor()).
-		DrawText(tp.options.Text(), tp.options.FontSize(), backgroundOptions)
+		SetFillColor(draw2dExtend.ParseHexColor(tp.options.TextColor)).
+		DrawText(tp.options.Text, tp.options.FontSize, backgroundOptions)
 
-	return nil
+	return output, nil
 }
 
-func (tp *TextProcessor) TransformOptions(options *map[string]string) ProcessorInterface {
-	tp.options = transformer.TransformTextOptions(*options)
+func (tp *TextProcessor) TransformOptions(options *map[string]interface{}) ProcessorInterface {
+	textOptions := processorOptions.NewTextOptions()
+	_ = mapstructure.Decode(*options, textOptions)
+
+	tp.options = textOptions
 
 	return tp
 }

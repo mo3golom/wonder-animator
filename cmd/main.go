@@ -1,9 +1,11 @@
 package main
 
 import (
-	WonderAnimator "github.com/mo3golom/wonder-animator"
 	"log"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
+	WonderAnimator "github.com/mo3golom/wonder-animator"
 
 	"encoding/json"
 	"fmt"
@@ -14,12 +16,18 @@ import (
 func main() {
 	start := time.Now()
 
+	var inputObjectMap map[string]interface{}
 	var inputObject WonderAnimator.InputObject
 	decodeErr := json.Unmarshal(
-
-		[]byte(`{"duration":5,"width":176,"height":176,"FPS":12,"BackgroundColor":"#b399f1","blocks":[{"type":{"id":"text","options":{"text":"test","width":"64","height":"64","fillColor":"#DA4828","strokeColor":"#EDED49","strokeWidth":"3","padding":"10","radius":"10","margin":"4","lineWidth":"28"}},"effects":[{"id":"move","options":{"distance": "100", "direction": "left"}}],"startAt":0,"duration":5,"position":{"x":50,"y":50},"opacity":1,"rotate":0,"scale":1,"rotatePoint":"right-bottom"}]}`),
-		&inputObject,
+		[]byte(`{"duration":5,"width":250,"height":249,"FPS":60,"BackgroundColor":"#b399f1","blocks":[{"processor":{"id":"image","options":{"text":"ехал грека","mask":{"mask":"mask.png","src":"unnamed.jpg","x":50,"y":50},"data":"vinyl.jpg","format":"15:04:05.00","width":250,"height":249,"fillColor":"#DA4828","strokeColor":"#EDED49","strokeWidth":3,"padding":10,"radius":10,"margin":4,"lineWidth":28}},"startAt":0,"duration":5,"position":{"x":0,"y":0},"opacity":1,"rotate":0,"scale":1,"rotatePoint":"right-bottom"}]}`),
+		&inputObjectMap,
 	)
+
+	if decodeErr != nil {
+		panic(decodeErr)
+	}
+
+	decodeErr = mapstructure.Decode(inputObjectMap, &inputObject)
 
 	if decodeErr != nil {
 		panic(decodeErr)

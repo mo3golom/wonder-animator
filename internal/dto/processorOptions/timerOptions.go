@@ -1,36 +1,19 @@
 package processorOptions
 
 const (
-	TimerModeNormal int = iota
-	TimerModeReverse
+	TimerModeNormal  = "normal"
+	TimerModeReverse = "reverse"
 )
 
 type TimerOptions struct {
-	*TextOptions
-	mode        int
-	includeZero bool
+	Mode        string `mapstructure:"mode"`
+	IncludeZero bool   `mapstructure:"includeZero"`
+	Format      string `mapstructure:"format"`
 }
 
-func NewTimerOptions(textOptions *TextOptions) *TimerOptions {
+func NewTimerOptions() *TimerOptions {
 	return &TimerOptions{
-		mode:        TimerModeNormal,
-		includeZero: false,
-		TextOptions: textOptions,
+		Mode:        TimerModeNormal,
+		IncludeZero: false,
 	}
-}
-
-func (t *TimerOptions) Mode() int {
-	return t.mode
-}
-
-func (t *TimerOptions) SetMode(mode int) {
-	t.mode = mode
-}
-
-func (t *TimerOptions) IncludeZero() bool {
-	return t.includeZero
-}
-
-func (t *TimerOptions) SetIncludeZero(includeZero bool) {
-	t.includeZero = includeZero
 }

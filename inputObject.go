@@ -7,13 +7,13 @@ const (
 )
 
 type InputObject struct {
-	Width           int          `json:"width"`
-	Height          int          `json:"height"`
-	Duration        float32      `json:"duration"`
-	Blocks          *[]dto.Block `json:"blocks"`
-	FPS             *int         `json:"fps"`
-	BackgroundImage *string      `json:"backgroundImage"`
-	BackgroundColor *string      `json:"backgroundColor"`
+	Width           int          `json:"width" mapstructure:"width"`
+	Height          int          `json:"height" mapstructure:"height"`
+	Duration        float32      `json:"duration" mapstructure:"duration"`
+	Blocks          *[]dto.Block `json:"blocks" mapstructure:"blocks"`
+	FPS             *int         `json:"fps" mapstructure:"fps"`
+	BackgroundImage *string      `json:"backgroundImage" mapstructure:"backgroundImage"`
+	BackgroundColor *string      `json:"backgroundColor" mapstructure:"backgroundColor"`
 }
 
 func (i *InputObject) GetFPS() int {

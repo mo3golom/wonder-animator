@@ -2,75 +2,62 @@ package processorType
 
 import (
 	"errors"
+	"image"
+	"math"
+	"time"
+
+	"github.com/mitchellh/mapstructure"
 	"github.com/mo3golom/wonder-animator/internal/dto"
 	"github.com/mo3golom/wonder-animator/internal/dto/processorOptions"
 	"github.com/mo3golom/wonder-animator/internal/transformer"
-	"github.com/mo3golom/wonder-animator/pkg/draw2dExtend"
-	"image/draw"
-	"strconv"
 )
 
 type TimerProcessor struct {
 	options *processorOptions.TimerOptions
-	*ProcessorStruct
+	*TextProcessor
 }
 
-func (tp *TimerProcessor) Processing(dest draw.Image, block *dto.Block, frameData *dto.FrameData) (err error) {
+func (tp *TimerProcessor) Processing(block *dto.Block, frameData *dto.FrameData) (output *image.RGBA, err error) {
 	if nil == tp.options {
-		return errors.New("предварительно необходимо преобразовать настройки")
+		return nil, errors.New("предварительно необходимо преобразовать настройки")
 	}
 
-	second := tp.calculateSecond(
-		block.StartAt,
-		block.Duration,
-		frameData.Pos,
-		frameData.FPS,
-		tp.options.Mode(),
-	)
+	second := 0.0
+
+	switch tp.options.Mode {
+	case processorOptions.TimerModeNormal:
+		startFrame := transformer.SecondsToFrameCount(float64(block.StartAt), frameData.FPS)
+		second = transformer.FrameCountToSeconds(frameData.Pos-startFrame, frameData.FPS)
+
+	case processorOptions.TimerModeReverse:
+		endFrame := transformer.SecondsToFrameCount(float64(block.StartAt+block.Duration), frameData.FPS)
+		second = transformer.FrameCountToSeconds(endFrame-frameData.Pos, frameData.FPS)
+	}
 
 	// Нужно ли включать 0 в таймер
-	if !tp.options.IncludeZero() {
+	if !tp.options.IncludeZero {
 		second += 1
 	}
 
-	graphicContext := draw2dExtend.NewGraphicContext(dest)
-	effectValues := tp.applyEffects(block, frameData)
+	// Преобразуем вычисленную секунду в тип Time
+	// и выводим время в форматированном формате
+	// Для написания правильной строки форматирования см. https://yourbasic.org/golang/format-parse-string-time-date-example/
+	sec, dec := math.Modf(second)
+	tp.TextProcessor.options.Text = time.
+		Unix(int64(sec), int64(dec*(1e9))).
+		Format(tp.options.Format)
 
-	backgroundOptions := draw2dExtend.NewBackgroundOptions().
-		SetFillColor(tp.options.BackgroundColor()).
-		SetPadding(tp.options.Padding()).
-		SetRadius(tp.options.Radius())
-
-	tp.drawBuilder.
-		SetGraphicContext(graphicContext).
-		SetX(effectValues.X()).
-		SetY(effectValues.Y()).
-		SetRotate(effectValues.Rotate()).
-		SetOpacity(effectValues.Opacity()).
-		SetScale(effectValues.Scale()).
-		SetRotatePointType(effectValues.RotatePoint).
-		SetFillColor(tp.options.TextColor()).
-		DrawText(strconv.Itoa(second), tp.options.FontSize(), backgroundOptions)
-
-	return nil
+	return tp.TextProcessor.Processing(block, frameData)
 }
 
-func (tp *TimerProcessor) TransformOptions(options *map[string]string) ProcessorInterface {
-	tp.options = transformer.TransformTimerOptions(*options)
+func (tp *TimerProcessor) TransformOptions(options *map[string]interface{}) ProcessorInterface {
+	timerOptions := processorOptions.NewTimerOptions()
+	_ = mapstructure.Decode(*options, timerOptions)
+
+	tp.options = timerOptions
+
+	// Преобразуем настройки для процессора текста
+	tp.TextProcessor.TransformOptions(options)
 
 	return tp
-}
-
-func (tp *TimerProcessor) calculateSecond(startAt, duration float32, framePos int, framesPerSecond int, mode int) (result int) {
-	switch mode {
-	case processorOptions.TimerModeNormal:
-		startFrame := transformer.SecondsToFrameCount(startAt, framesPerSecond)
-		result = int(transformer.FrameCountToSeconds(framePos-startFrame, framesPerSecond))
-
-	case processorOptions.TimerModeReverse:
-		endFrame := transformer.SecondsToFrameCount(startAt+duration, framesPerSecond)
-		result = int(transformer.FrameCountToSeconds(endFrame-framePos, framesPerSecond))
-	}
-
-	return result
 }

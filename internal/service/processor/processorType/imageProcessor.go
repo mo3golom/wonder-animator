@@ -2,15 +2,15 @@ package processorType
 
 import (
 	"errors"
+	"image"
+	"image/draw"
+
 	"github.com/disintegration/imaging"
+	"github.com/llgcode/draw2d/draw2dimg"
+	"github.com/mitchellh/mapstructure"
 	"github.com/mo3golom/wonder-animator/internal/dto"
 	"github.com/mo3golom/wonder-animator/internal/dto/processorOptions"
-	"github.com/mo3golom/wonder-animator/internal/transformer"
-	"github.com/mo3golom/wonder-animator/pkg/draw2dExtend"
-	"github.com/mo3golom/wonder-animator/pkg/imagingExtend"
 	"github.com/mo3golom/wonder-animator/pkg/loader"
-	"image/draw"
-	"math"
 )
 
 type ImageProcessor struct {
@@ -18,18 +18,16 @@ type ImageProcessor struct {
 	*ProcessorStruct
 }
 
-func (ip *ImageProcessor) Processing(dest draw.Image, block *dto.Block, frameData *dto.FrameData) (err error) {
+func (ip *ImageProcessor) Processing(_ *dto.Block, _ *dto.FrameData) (output *image.RGBA, err error) {
 	if nil == ip.options {
-		return errors.New("предварительно необходимо преобразовать настройки")
+		return nil, errors.New("предварительно необходимо преобразовать настройки")
 	}
 
-	img, err := loader.LoadImage(ip.options.Data())
+	img, err := loader.LoadImage(ip.options.Data)
 
 	if nil != err {
-		return err
+		return nil, err
 	}
-
-	effectValues := ip.applyEffects(block, frameData)
 
 	// Проверяем, нужен ли ресайз картинки
 	originalSize := img.Bounds()
@@ -38,14 +36,14 @@ func (ip *ImageProcessor) Processing(dest draw.Image, block *dto.Block, frameDat
 	isNeedResize := false
 
 	// Проверяем нужно ли изменение ширины
-	if 0 < ip.options.Width() && width != ip.options.Width() {
-		width = ip.options.Width()
+	if 0 < ip.options.Width && width != ip.options.Width {
+		width = ip.options.Width
 		isNeedResize = true
 	}
 
 	// Проверяем нужно ли изменение высоты
-	if 0 < ip.options.Height() && height != ip.options.Height() {
-		height = ip.options.Height()
+	if 0 < ip.options.Height && height != ip.options.Height {
+		height = ip.options.Height
 		isNeedResize = true
 	}
 
@@ -59,35 +57,33 @@ func (ip *ImageProcessor) Processing(dest draw.Image, block *dto.Block, frameDat
 		)
 	}
 
-	// Устанавливаем прозрачность
-	img = imagingExtend.Opacity(img, float64(effectValues.Opacity()))
-
-	// Делаем поворот
-	rotatePoint := draw2dExtend.GetRotatePointByType(
-		effectValues.RotatePoint,
-		effectValues.X(),
-		effectValues.Y(),
-		float64(width),
-		float64(height),
-	)
-
-	img = imagingExtend.RotateAround(
-		img,
-		effectValues.Rotate(),
-		math.Abs(effectValues.X()-rotatePoint.X),
-		math.Abs(effectValues.Y()-rotatePoint.Y),
-	)
-
-	graphicContext := draw2dExtend.NewGraphicContext(dest)
-	graphicContext.Scale(effectValues.Scale(), rotatePoint)
-	graphicContext.Translate(effectValues.X(), effectValues.Y())
+	output = image.NewRGBA(img.Bounds())
+	graphicContext := draw2dimg.NewGraphicContext(output)
 	graphicContext.DrawImage(img)
 
-	return nil
+	// Если в настройках есть макса, то рисуем маску
+	if nil != ip.options.Mask {
+		maskOptions := ip.options.Mask
+		src, _ := loader.LoadImage(maskOptions.Src)
+		mask, _ := loader.LoadImage(maskOptions.Mask)
+		rect := image.Rect(
+			maskOptions.X,
+			maskOptions.Y,
+			maskOptions.X+src.Bounds().Dx(),
+			maskOptions.Y+src.Bounds().Dy(),
+		)
+
+		draw.DrawMask(output, rect, src, image.Pt(0, 0), mask, image.Pt(0, 0), draw.Over)
+	}
+
+	return output, nil
 }
 
-func (ip *ImageProcessor) TransformOptions(options *map[string]string) ProcessorInterface {
-	ip.options = transformer.TransformImageOptions(*options)
+func (ip *ImageProcessor) TransformOptions(options *map[string]interface{}) ProcessorInterface {
+	imageOptions := processorOptions.NewImageOptions()
+	_ = mapstructure.Decode(*options, imageOptions)
+
+	ip.options = imageOptions
 
 	return ip
 }

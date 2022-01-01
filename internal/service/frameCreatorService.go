@@ -1,16 +1,23 @@
 package service
 
 import (
-	"github.com/mo3golom/wonder-animator/internal/dto"
-	"github.com/mo3golom/wonder-animator/internal/service/processor"
-	"github.com/mo3golom/wonder-animator/internal/transformer"
-	"github.com/mo3golom/wonder-animator/pkg/draw2dExtend"
-	"github.com/mo3golom/wonder-animator/pkg/loader"
 	"image"
 	"image/color"
 	"image/draw"
 	"log"
+	"math"
 	"sync"
+
+	"github.com/llgcode/draw2d/draw2dimg"
+	"github.com/mo3golom/wonder-animator/internal/dto"
+	"github.com/mo3golom/wonder-animator/internal/service/processor"
+	"github.com/mo3golom/wonder-animator/internal/transformer"
+	"github.com/mo3golom/wonder-animator/pkg/draw2dExtend"
+	"github.com/mo3golom/wonder-animator/pkg/imagingExtend"
+	"github.com/mo3golom/wonder-animator/pkg/loader"
+	WonderEffects "github.com/mo3golom/wonder-effects"
+	"github.com/mo3golom/wonder-effects/wonderEffectDTO"
+	"github.com/mo3golom/wonder-glitch/wonderGlitchService"
 )
 
 type frameSetItem struct {
@@ -20,15 +27,24 @@ type frameSetItem struct {
 
 type FrameCreatorService struct {
 	processorHandlerBus *processor.Handler
+	effectHandlerBus    *WonderEffects.Handler
+	glitchService       *wonderGlitchService.GlitchService
 	framesPerSecond     int
 	backgroundImage     *image.Image
 	backgroundColor     *image.Uniform
 }
 
-func NewFrameCreatorService(framesPerSecond int, processorHandlerBus *processor.Handler) *FrameCreatorService {
+func NewFrameCreatorService(
+	framesPerSecond int,
+	processorHandlerBus *processor.Handler,
+	effectHandlerBus *WonderEffects.Handler,
+	glitchService *wonderGlitchService.GlitchService,
+) *FrameCreatorService {
 	return &FrameCreatorService{
 		framesPerSecond:     framesPerSecond,
 		processorHandlerBus: processorHandlerBus,
+		effectHandlerBus:    effectHandlerBus,
+		glitchService:       glitchService,
 	}
 }
 
@@ -73,7 +89,7 @@ func (fms *FrameCreatorService) CreateFrameSet(
 		backgroundColor = fms.backgroundColor
 	}
 
-	durationInFrames := transformer.SecondsToFrameCount(duration, fms.framesPerSecond)
+	durationInFrames := transformer.SecondsToFrameCount(float64(duration), fms.framesPerSecond)
 	frameChannel := make(chan *frameSetItem, durationInFrames)
 
 	// Предварительно создаем срез для записи результатов
@@ -133,14 +149,52 @@ func (fms *FrameCreatorService) createFrameGoroutine(
 			// В этом месте из-за многопроцессорности могут возникать неприятные артефакты, поэтому ставим блокировку мьютексом
 			// Альтернативыное решение - runtime.GOMAXPROCS(1)
 			mutex.Lock()
-			err := fms.processorHandlerBus.Handle(frame, &block, frameData)
+			frameItem, err := fms.processorHandlerBus.Handle(&block, frameData)
 			mutex.Unlock()
 
-			if nil == err {
+			if nil != err {
+				log.Println("Ошибка обработки блока:", block.Type.Id, err)
+
 				continue
 			}
 
-			log.Println("Ошибка обработки блока", block.Type.Id, err)
+			// В этом месте из-за многопроцессорности могут возникать неприятные артефакты, поэтому ставим блокировку мьютексом
+			// Альтернативыное решение - runtime.GOMAXPROCS(1)
+			mutex.Lock()
+			frameItem = fms.applyGlitch(frameItem, &block, frameData)
+			mutex.Unlock()
+
+			effectValues := fms.applyEffects(&block, frameData)
+
+			frameItemBounds := frameItem.Bounds()
+			// Находим точку поворота
+			rotatePoint := draw2dExtend.GetRotatePointByType(
+				effectValues.RotatePoint,
+				effectValues.X(),
+				effectValues.Y(),
+				float64(frameItemBounds.Dx()),
+				float64(frameItemBounds.Dy()),
+			)
+
+			// Устанавливаем прозрачность
+			output := imagingExtend.Opacity(frameItem, float64(effectValues.Opacity()))
+			output = imagingExtend.RotateAround(
+				output,
+				effectValues.Rotate(),
+				math.Abs(effectValues.X()-rotatePoint.X),
+				math.Abs(effectValues.Y()-rotatePoint.Y),
+			)
+
+			// В этом месте из-за многопроцессорности могут возникать неприятные артефакты, поэтому ставим блокировку мьютексом
+			// Альтернативыное решение - runtime.GOMAXPROCS(1)
+			mutex.Lock()
+			graphicContext := draw2dimg.NewGraphicContext(frame)
+			graphicContext.Translate(effectValues.X(), effectValues.Y())
+			graphicContext.Translate(rotatePoint.X, rotatePoint.Y)
+			graphicContext.Scale(effectValues.Scale(), effectValues.Scale())
+			graphicContext.Translate(-rotatePoint.X, -rotatePoint.Y)
+			graphicContext.DrawImage(output)
+			mutex.Unlock()
 		}
 
 	}
@@ -151,8 +205,8 @@ func (fms *FrameCreatorService) createFrameGoroutine(
 
 func (fms *FrameCreatorService) getConcreteFrames(framePos int, blocks []dto.Block, framesPerSecond int) (concreteBlocks []dto.Block) {
 	for _, block := range blocks {
-		durationInFrames := transformer.SecondsToFrameCount(block.Duration, framesPerSecond)
-		startAtInFrames := transformer.SecondsToFrameCount(block.StartAt, framesPerSecond)
+		durationInFrames := transformer.SecondsToFrameCount(float64(block.Duration), framesPerSecond)
+		startAtInFrames := transformer.SecondsToFrameCount(float64(block.StartAt), framesPerSecond)
 
 		// Если текущая позиция кадра меньше чем старт или больше чем конец, то пропускаем
 		if startAtInFrames > framePos || framePos > (startAtInFrames+durationInFrames) {
@@ -163,4 +217,28 @@ func (fms *FrameCreatorService) getConcreteFrames(framePos int, blocks []dto.Blo
 	}
 
 	return
+}
+
+func (fms *FrameCreatorService) applyEffects(block *dto.Block, frameData *dto.FrameData) *wonderEffectDTO.EffectValues {
+	progress := float32(frameData.Pos) / float32(frameData.Max)
+
+	effectValues := wonderEffectDTO.NewEffectValues()
+	effectValues.StartX = block.Position.X
+	effectValues.StartY = block.Position.Y
+	effectValues.StartRotate = block.Rotate
+	effectValues.StartOpacity = block.Opacity
+	effectValues.StartScale = block.Scale
+	effectValues.RotatePoint = block.RotatePoint
+
+	for _, effect := range block.Effects {
+		_ = fms.effectHandlerBus.Handle(&effect, effectValues, &progress)
+	}
+
+	return effectValues
+}
+
+func (fms *FrameCreatorService) applyGlitch(dest *image.RGBA, block *dto.Block, frameData *dto.FrameData) *image.RGBA {
+	progress := float64(frameData.Pos) / float64(frameData.Max)
+
+	return fms.glitchService.SetDest(dest).SetFactor(block.GlitchFactor * progress).Glitchify(block.Glitches)
 }

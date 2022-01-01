@@ -8,12 +8,17 @@ import (
 	"github.com/mo3golom/wonder-animator/pkg/draw2dExtend"
 	"github.com/mo3golom/wonder-animator/pkg/loader"
 	WonderEffects "github.com/mo3golom/wonder-effects"
+	"github.com/mo3golom/wonder-glitch/wonderGlitchDTO"
+	"github.com/mo3golom/wonder-glitch/wonderGlitchService"
 	"path"
 	"runtime"
 )
 
 type wonderAnimator struct {
-	fontName, fontPath string
+	fontName, fontPath   string
+	additionalProcessors []enum.ProcessorType
+	additionalEffects    []WonderEffects.EffectType
+	additionalGlitches   []wonderGlitchDTO.EffectType
 }
 
 func WonderAnimator() *wonderAnimator {
@@ -23,6 +28,23 @@ func WonderAnimator() *wonderAnimator {
 func (wa *wonderAnimator) SetFont(name, path string) *wonderAnimator {
 	wa.fontName = name
 	wa.fontPath = path
+
+	return wa
+}
+
+func (wa *wonderAnimator) addProcessor(processorType enum.ProcessorType) *wonderAnimator {
+	wa.additionalProcessors = append(wa.additionalProcessors, processorType)
+
+	return wa
+}
+
+func (wa *wonderAnimator) addEffect(effectType WonderEffects.EffectType) *wonderAnimator {
+	wa.additionalEffects = append(wa.additionalEffects, effectType)
+
+	return wa
+}
+func (wa *wonderAnimator) addGlitch(effectType wonderGlitchDTO.EffectType) *wonderAnimator {
+	wa.additionalGlitches = append(wa.additionalGlitches, effectType)
 
 	return wa
 }
@@ -48,10 +70,24 @@ func (wa *wonderAnimator) Generate(inputObject InputObject, saveType string) fra
 	frameCreatorService := service.NewFrameCreatorService(
 		inputObject.GetFPS(),
 		processor.NewProcessorHandlerBus(
-			enum.GetProcessorTypes(
-				draw2dExtend.NewDrawBuilder(*fontData),
-				WonderEffects.NewEffectHandlerBus(
-					WonderEffects.GetTypesList(),
+			append(
+				enum.GetProcessorTypes(
+					draw2dExtend.NewDrawBuilder(*fontData),
+				),
+				wa.additionalProcessors...,
+			),
+		),
+		WonderEffects.NewEffectHandlerBus(
+			append(
+				WonderEffects.GetTypesList(),
+				wa.additionalEffects...,
+			),
+		),
+		wonderGlitchService.NewGlitchService(
+			wonderGlitchService.NewEffectHandlerBus(
+				append(
+					wonderGlitchDTO.GetTypesList(),
+					wa.additionalGlitches...,
 				),
 			),
 		),

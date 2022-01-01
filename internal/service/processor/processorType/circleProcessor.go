@@ -2,11 +2,13 @@ package processorType
 
 import (
 	"errors"
+	"github.com/llgcode/draw2d/draw2dimg"
+	"github.com/mitchellh/mapstructure"
 	"github.com/mo3golom/wonder-animator/internal/dto"
 	"github.com/mo3golom/wonder-animator/internal/dto/processorOptions"
-	"github.com/mo3golom/wonder-animator/internal/transformer"
 	"github.com/mo3golom/wonder-animator/pkg/draw2dExtend"
-	"image/draw"
+	"image"
+	"math"
 )
 
 type CircleProcessor struct {
@@ -14,32 +16,37 @@ type CircleProcessor struct {
 	*ProcessorStruct
 }
 
-func (cp *CircleProcessor) Processing(dest draw.Image, block *dto.Block, frameData *dto.FrameData) (err error) {
+func (cp *CircleProcessor) Processing(_ *dto.Block, _ *dto.FrameData) (output *image.RGBA, err error) {
 	if nil == cp.options {
-		return errors.New("предварительно необходимо преобразовать настройки")
+		return nil, errors.New("предварительно необходимо преобразовать настройки")
 	}
 
-	graphicContext := draw2dExtend.NewGraphicContext(dest)
-	effectValues := cp.applyEffects(block, frameData)
+	diameter := int(math.Ceil(cp.options.Radius)) * 2
+	output = image.NewRGBA(
+		image.Rect(
+			0,
+			0,
+			diameter,
+			diameter,
+		),
+	)
+	graphicContext := draw2dimg.NewGraphicContext(output)
 
-	cp.drawBuilder.
+	cp.DrawBuilder.
 		SetGraphicContext(graphicContext).
-		SetX(effectValues.X()).
-		SetY(effectValues.Y()).
-		SetRotate(effectValues.Rotate()).
-		SetOpacity(effectValues.Opacity()).
-		SetScale(effectValues.Scale()).
-		SetRotatePointType(effectValues.RotatePoint).
-		SetFillColor(cp.options.FillColor()).
-		SetStrokeColor(cp.options.StrokeColor()).
-		SetStrokeWidth(cp.options.StrokeWidth()).
-		DrawCircle(cp.options.Radius())
+		SetFillColor(draw2dExtend.ParseHexColor(cp.options.FillColor)).
+		SetStrokeColor(draw2dExtend.ParseHexColor(cp.options.StrokeColor)).
+		SetStrokeWidth(cp.options.StrokeWidth).
+		DrawCircle(cp.options.Radius)
 
-	return nil
+	return output, nil
 }
 
-func (cp *CircleProcessor) TransformOptions(options *map[string]string) ProcessorInterface {
-	cp.options = transformer.TransformCircleOptions(*options)
+func (cp *CircleProcessor) TransformOptions(options *map[string]interface{}) ProcessorInterface {
+	circleOptions := processorOptions.NewCircleOptions()
+	_ = mapstructure.Decode(*options, circleOptions)
+
+	cp.options = circleOptions
 
 	return cp
 }

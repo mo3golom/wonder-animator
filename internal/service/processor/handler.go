@@ -1,10 +1,11 @@
 package processor
 
 import (
+	"errors"
 	"github.com/mo3golom/wonder-animator/internal/dto"
 	"github.com/mo3golom/wonder-animator/internal/dto/enum"
 	"github.com/mo3golom/wonder-animator/internal/service/processor/processorType"
-	"image/draw"
+	"image"
 )
 
 type Handler struct {
@@ -13,32 +14,33 @@ type Handler struct {
 	processor   processorType.ProcessorInterface
 }
 
-func NewProcessorHandlerBus(blockTypes []enum.ProcessorType) *Handler {
-	var prevTypeHandler *Handler
+func NewProcessorHandlerBus(processorTypes []enum.ProcessorType) *Handler {
+	var handler *Handler
 
-	for _, blockType := range blockTypes {
-		handler := &Handler{id: blockType.Id(), processor: blockType.Processor()}
-
-		if nil != prevTypeHandler {
-			handler.nextHandler = prevTypeHandler
-		}
-
-		prevTypeHandler = handler
+	for _, pType := range processorTypes {
+		handler = handler.AddProcessor(pType)
 	}
 
-	return prevTypeHandler
+	return handler
 }
 
-func (th *Handler) Handle(dest draw.Image, block *dto.Block, frameData *dto.FrameData) (err error) {
+func (h *Handler) Handle(block *dto.Block, frameData *dto.FrameData) (output *image.RGBA, err error) {
 	blockType := block.Type
 
-	if blockType.Id == th.id {
-		return th.processor.TransformOptions(&blockType.Options).Processing(dest, block, frameData)
+	if blockType.Id == h.id {
+		return h.processor.TransformOptions(&blockType.Options).Processing(block, frameData)
 	}
 
-	if nil != th.nextHandler {
-		return th.nextHandler.Handle(dest, block, frameData)
+	if nil != h.nextHandler {
+		return h.nextHandler.Handle(block, frameData)
 	}
 
-	return nil
+	return nil, errors.New("не удалось найти обработчик для блока")
+}
+
+func (h *Handler) AddProcessor(processorType enum.ProcessorType) *Handler {
+	newHandler := &Handler{id: processorType.Id, processor: processorType.Processor}
+	newHandler.nextHandler = h
+
+	return newHandler
 }
